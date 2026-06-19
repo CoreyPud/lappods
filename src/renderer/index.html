@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' https://*.mzstatic.com data:; media-src 'self' lappods-media:; style-src 'self' 'unsafe-inline';" />
+    <title>LapPods</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <img class="logo" src="assets/logo.png" alt="LapPods" />
+        <div>
+          <h1>LapPods</h1>
+          <p class="tagline">Podcasts &amp; audio → Shokz OpenSwim Pro</p>
+        </div>
+      </div>
+
+      <div class="dest">
+        <label for="drive">Send to</label>
+        <select id="drive"></select>
+        <button id="refresh-drives" class="ghost" title="Rescan drives">⟳</button>
+        <button id="choose-folder" class="ghost">Folder…</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <div class="tabs">
+          <button class="tab active" data-tab="podcasts">Podcasts</button>
+          <button class="tab" data-tab="files">Files</button>
+        </div>
+        <div class="sidebar-head">
+          <label class="toggle">
+            <input type="checkbox" id="filter-toggle" checked />
+            <span id="filter-label">Downloaded only</span>
+          </label>
+          <button id="rescan" class="ghost icon hidden" title="Rescan files">⟳</button>
+        </div>
+        <ul id="group-list" class="show-list"></ul>
+      </aside>
+
+      <section class="content">
+        <div id="scan-bar" class="scan-bar hidden">
+          <span class="scan-label">Scan:</span>
+          <label class="chip"><input type="checkbox" class="root-chk" value="Downloads" checked /> Downloads</label>
+          <label class="chip"><input type="checkbox" class="root-chk" value="Music" checked /> Music</label>
+          <label class="chip"><input type="checkbox" class="root-chk" value="Desktop" checked /> Desktop</label>
+          <label class="chip"><input type="checkbox" class="root-chk" value="Documents" /> Documents</label>
+          <button id="add-root" class="ghost">+ Folder…</button>
+          <button id="scan-btn" class="primary small">Scan</button>
+          <span id="scan-status" class="muted"></span>
+        </div>
+
+        <div class="content-head">
+          <div id="group-title-wrap">
+            <h2 id="group-title">Select a show</h2>
+            <p id="group-meta" class="muted"></p>
+          </div>
+          <div class="bulk">
+            <button id="select-all" class="ghost">Select all</button>
+            <button id="clear-sel" class="ghost">Clear</button>
+          </div>
+        </div>
+        <ul id="item-list" class="episode-list"></ul>
+      </section>
+    </main>
+
+    <footer class="actionbar">
+      <div class="options">
+        <label class="chk"><input type="checkbox" id="opt-organize" checked /> Group into folders</label>
+        <label class="chk"><input type="checkbox" id="opt-number" /> Number tracks</label>
+        <label class="chk"><input type="checkbox" id="opt-m3u" checked /> Create .m3u playlist</label>
+      </div>
+      <div class="action-right">
+        <span id="selection-count" class="muted">0 selected</span>
+        <button id="export" class="primary" disabled>Export</button>
+      </div>
+    </footer>
+
+    <div id="progress" class="progress hidden">
+      <div class="progress-card">
+        <h3 id="progress-title">Exporting…</h3>
+        <div class="bar"><div id="bar-fill" class="bar-fill"></div></div>
+        <p id="progress-detail" class="muted"></p>
+        <div id="progress-actions" class="progress-actions hidden">
+          <button id="reveal" class="ghost">Reveal in Finder</button>
+          <button id="progress-close" class="primary">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>

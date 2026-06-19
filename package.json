@@ -1,0 +1,34 @@
+{
+  "name": "lappods",
+  "version": "0.1.0",
+  "description": "Manage and export Apple Podcasts episodes to your Shokz OpenSwim Pro (and any USB/SD drive).",
+  "main": "src/main.js",
+  "author": "Corey Pudhorodsky",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "icons": "node scripts/make-icons.js",
+    "dist": "electron-builder --mac"
+  },
+  "build": {
+    "appId": "com.coreypud.lappods",
+    "productName": "LapPods",
+    "mac": {
+      "category": "public.app-category.music",
+      "target": "dmg",
+      "icon": "build/icon.icns"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ]
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3",
+    "sharp": "^0.35.2"
+  },
+  "dependencies": {
+    "music-metadata": "^11.13.0"
+  }
+}
