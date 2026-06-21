@@ -40,6 +40,40 @@ async function deviceKeys(mountPoint) {
   return [...keys];
 }
 
+// One canonical playlist per device, regenerated from current contents so it
+// can never go stale after a removal.
+const CANONICAL_PLAYLIST = 'LapPods.m3u';
+
+// Rewrites the device's canonical .m3u to reflect exactly what's on it now,
+// overwriting any prior copy. With `onlyIfExists`, it refreshes an existing
+// playlist but won't create one from nothing (so removals stay in sync without
+// forcing a playlist on users who don't keep one).
+async function writeDevicePlaylist(mountPoint, { onlyIfExists = false } = {}) {
+  if (!mountPoint) return null;
+  const playlistPath = path.join(mountPoint, CANONICAL_PLAYLIST);
+  if (onlyIfExists && !fs.existsSync(playlistPath)) return null;
+
+  const { groups } = await listDevice(mountPoint);
+  const rels = [];
+  for (const group of groups) {
+    for (const item of group.items) {
+      rels.push(path.relative(mountPoint, item.srcPath).split(path.sep).join('/'));
+    }
+  }
+
+  if (rels.length === 0) {
+    try {
+      await fsp.unlink(playlistPath);
+    } catch {}
+    return null;
+  }
+
+  rels.sort((a, b) => a.localeCompare(b));
+  const lines = ['#EXTM3U', ...rels];
+  await fsp.writeFile(playlistPath, lines.join('\r\n') + '\r\n', 'utf8');
+  return playlistPath;
+}
+
 // Permanently deletes the given files from the device, then prunes any folders
 // left empty. Refuses any path that does not resolve inside the mount.
 async function removeFromDevice(mountPoint, filePaths) {
@@ -90,7 +124,21 @@ async function removeFromDevice(mountPoint, filePaths) {
     }
   }
 
+  // Keep an existing canonical playlist in sync with what's left.
+  if (removed.length > 0) {
+    try {
+      await writeDevicePlaylist(mountReal, { onlyIfExists: true });
+    } catch {}
+  }
+
   return { removed, errors };
 }
 
-module.exports = { listDevice, deviceKeys, removeFromDevice, isInside };
+module.exports = {
+  listDevice,
+  deviceKeys,
+  removeFromDevice,
+  writeDevicePlaylist,
+  isInside,
+  CANONICAL_PLAYLIST,
+};

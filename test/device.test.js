@@ -7,7 +7,13 @@ const fsp = fs.promises;
 const os = require('node:os');
 const path = require('node:path');
 
-const { listDevice, deviceKeys, removeFromDevice } = require('../src/lib/device');
+const {
+  listDevice,
+  deviceKeys,
+  removeFromDevice,
+  writeDevicePlaylist,
+  CANONICAL_PLAYLIST,
+} = require('../src/lib/device');
 const { fileKey } = require('../src/lib/names');
 
 // Builds a throwaway "device" with a couple of show folders and a root file.
@@ -73,4 +79,50 @@ test('deviceKeys returns keys for nested and root files alike', async () => {
 test('listDevice with no mount returns an empty result', async () => {
   const res = await listDevice(null);
   assert.deepStrictEqual(res, { groups: [], fileCount: 0, roots: [] });
+});
+
+test('writeDevicePlaylist lists current audio with device-relative paths', async () => {
+  const mount = await makeFixture();
+
+  const playlistPath = await writeDevicePlaylist(mount);
+
+  assert.strictEqual(playlistPath, path.join(mount, CANONICAL_PLAYLIST));
+  const body = await fsp.readFile(playlistPath, 'utf8');
+  assert.ok(body.startsWith('#EXTM3U'));
+  assert.ok(body.includes('ShowA/ep1.mp3'), 'device-relative POSIX path');
+  assert.ok(body.includes('root.mp3'));
+  assert.ok(body.includes('\r\n'), 'CRLF line endings');
+});
+
+test('regenerating after a removal drops the file from the playlist', async () => {
+  const mount = await makeFixture();
+  await writeDevicePlaylist(mount);
+
+  await removeFromDevice(mount, [path.join(mount, 'ShowB', 'only.mp3')]);
+
+  const body = await fsp.readFile(path.join(mount, CANONICAL_PLAYLIST), 'utf8');
+  assert.ok(!body.includes('only.mp3'), 'removed track gone from playlist');
+  assert.ok(body.includes('ShowA/ep1.mp3'), 'remaining tracks kept');
+});
+
+test('regenerating overwrites rather than creating a second playlist', async () => {
+  const mount = await makeFixture();
+  await writeDevicePlaylist(mount);
+  await writeDevicePlaylist(mount);
+
+  const entries = await fsp.readdir(mount);
+  const playlists = entries.filter((e) => e.endsWith('.m3u'));
+  assert.deepStrictEqual(playlists, [CANONICAL_PLAYLIST]);
+});
+
+test('onlyIfExists refreshes an existing playlist but never creates one', async () => {
+  const mount = await makeFixture();
+
+  const created = await writeDevicePlaylist(mount, { onlyIfExists: true });
+  assert.strictEqual(created, null, 'no playlist created from nothing');
+  assert.strictEqual(fs.existsSync(path.join(mount, CANONICAL_PLAYLIST)), false);
+
+  await writeDevicePlaylist(mount); // now one exists
+  const refreshed = await writeDevicePlaylist(mount, { onlyIfExists: true });
+  assert.strictEqual(refreshed, path.join(mount, CANONICAL_PLAYLIST));
 });

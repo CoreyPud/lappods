@@ -6,6 +6,7 @@ const { pipeline } = require('stream/promises');
 const { fileURLToPath } = require('url');
 
 const { sanitize } = require('./names');
+const { writeDevicePlaylist } = require('./device');
 
 function uniquePath(dir, base, ext) {
   let candidate = path.join(dir, base + ext);
@@ -18,14 +19,13 @@ function uniquePath(dir, base, ext) {
 }
 
 // items: [{ showTitle, episodeTitle, assetURL, pubDate }]
-// options: { destDir, organizeByShow, numberPrefix, writeM3U, playlistName, onProgress }
+// options: { destDir, organizeByShow, numberPrefix, writeM3U, onProgress }
 async function exportEpisodes(items, options) {
   const {
     destDir,
     organizeByShow = true,
     numberPrefix = false,
     writeM3U = true,
-    playlistName = 'LapPods Playlist',
     onProgress = () => {},
   } = options;
 
@@ -90,12 +90,13 @@ async function exportEpisodes(items, options) {
     }
   }
 
+  // Regenerate the single canonical playlist from the destination's current
+  // contents, so it reflects this export plus whatever was already there.
   let playlistPath = null;
-  if (writeM3U && written.length > 0) {
-    const m3uName = sanitize(playlistName, 'playlist') + '.m3u';
-    playlistPath = uniquePath(destDir, sanitize(playlistName, 'playlist'), '.m3u');
-    const lines = ['#EXTM3U', ...written.map((rel) => rel.split(path.sep).join('/'))];
-    fs.writeFileSync(playlistPath, lines.join('\r\n') + '\r\n', 'utf8');
+  if (writeM3U && done > 0) {
+    try {
+      playlistPath = await writeDevicePlaylist(destDir);
+    } catch {}
   }
 
   onProgress({ phase: 'done', total, done });
