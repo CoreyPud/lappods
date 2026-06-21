@@ -89,6 +89,7 @@ function podcastGroups() {
       groupTitle: s.title,
       name: e.title,
       assetURL: e.assetURL,
+      trackKey: e.trackKey,
       previewPath: e.downloaded ? pathFromAssetURL(e.assetURL) : null,
     })),
   }));
@@ -121,6 +122,7 @@ function fileGroups() {
         // (the exporter re-appends the real extension).
         name: it.title || it.fileName.replace(/\.[^.]+$/, ''),
         srcPath: it.srcPath,
+        trackKey: it.trackKey,
         previewPath: it.exportable ? it.srcPath : null,
       };
     }),
@@ -336,6 +338,15 @@ function renderItems() {
     li.appendChild(cb);
     li.appendChild(main);
     li.appendChild(preview);
+
+    // Flag candidates already present on the device (add tabs only).
+    if (state.tab !== 'device' && item.trackKey && state.deviceKeys.has(item.trackKey)) {
+      const flag = document.createElement('div');
+      flag.className = 'on-device';
+      flag.textContent = '✓ On device';
+      li.appendChild(flag);
+    }
+
     li.appendChild(status);
     list.appendChild(li);
   }
@@ -498,6 +509,19 @@ async function loadDevice() {
   }
 }
 
+// Fetches the set of match keys for what's on the device, so the Podcasts/Files
+// tabs can flag items already there. Refreshed whenever the device or drive
+// could have changed.
+async function refreshDeviceKeys() {
+  const mount = $('drive').value;
+  try {
+    state.deviceKeys = mount ? new Set(await api.deviceIndex(mount)) : new Set();
+  } catch {
+    state.deviceKeys = new Set();
+  }
+  if (state.tab !== 'device') renderItems();
+}
+
 function selectedRoots() {
   return Array.from(document.querySelectorAll('.root-chk:checked')).map((c) => c.value);
 }
@@ -586,8 +610,9 @@ function finishProgress(result) {
   updateSelectionUI();
   renderItems();
 
-  // What's on the device just changed — re-read it next time it's viewed.
+  // What's on the device just changed — re-read it and refresh dedup flags.
   state.device = null;
+  refreshDeviceKeys();
   if (state.tab === 'device') loadDevice();
 }
 
@@ -619,6 +644,7 @@ async function runRemove() {
     toast(err.message);
   }
   await loadDevice();
+  await refreshDeviceKeys();
   updateSelectionUI();
 }
 
@@ -696,6 +722,7 @@ function wire() {
     sel.appendChild(opt);
     sel.value = dir;
     state.device = null;
+    refreshDeviceKeys();
     if (state.tab === 'device') loadDevice();
   });
 
@@ -715,6 +742,7 @@ function wire() {
   $('remove').addEventListener('click', runRemove);
   $('drive').addEventListener('change', () => {
     state.device = null;
+    refreshDeviceKeys();
     if (state.tab === 'device') loadDevice();
   });
   $('progress-close').addEventListener('click', () => $('progress').classList.add('hidden'));
@@ -739,6 +767,6 @@ function wire() {
 // --- boot --------------------------------------------------------------
 
 wire();
-loadDrives();
+loadDrives().then(refreshDeviceKeys); // populate dedup flags once a drive is known
 setTab('podcasts'); // normalize initial tab state + trigger library load
 updateSelectionUI();
