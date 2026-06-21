@@ -5,20 +5,7 @@ const path = require('path');
 const { pipeline } = require('stream/promises');
 const { fileURLToPath } = require('url');
 
-// Strip characters that FAT32 (and most media players) choke on, collapse
-// whitespace, and keep names to a safe length.
-function sanitize(name, fallback = 'untitled') {
-  if (!name) return fallback;
-  let out = name
-    .replace(/[\/\\:*?"<>|]/g, ' ') // illegal on FAT32
-    .replace(/[\x00-\x1f]/g, ' ') // control chars
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/[. ]+$/, ''); // FAT32 dislikes trailing dot/space
-  if (!out) out = fallback;
-  if (out.length > 120) out = out.slice(0, 120).trim();
-  return out;
-}
+const { sanitize } = require('./names');
 
 function uniquePath(dir, base, ext) {
   let candidate = path.join(dir, base + ext);
