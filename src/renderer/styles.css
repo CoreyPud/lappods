@@ -265,6 +265,28 @@ button.ghost {
 }
 button.ghost:hover { background: var(--bg-elev-2); }
 
+button.danger {
+  background: var(--danger, #c0392b);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 20px;
+  font-size: 13px;
+  font-weight: 600;
+}
+button.danger:hover { filter: brightness(1.08); }
+button.danger:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* "✓ On device" flag on candidate rows */
+.on-device {
+  font-size: 11px;
+  color: var(--good);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
 /* ---- Progress overlay ---- */
 .progress {
   position: fixed; inset: 0;

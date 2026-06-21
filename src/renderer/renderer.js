@@ -3,13 +3,17 @@
 const api = window.lappods;
 
 const state = {
-  tab: 'podcasts', // 'podcasts' | 'files'
+  tab: 'podcasts', // 'podcasts' | 'files' | 'device'
   podcasts: null, // raw shows, or null if not loaded
   files: null, // scan result, or null if not scanned
-  activeGroup: { podcasts: null, files: null }, // active group id per tab
+  device: null, // scan result for the selected drive, or null if not loaded
+  activeGroup: { podcasts: null, files: null, device: null }, // active group id per tab
   filterExportable: { podcasts: true, files: true },
-  selected: new Map(), // itemId -> export payload
+  selected: new Map(), // itemId -> export payload (Podcasts/Files tabs)
+  deviceSelected: new Map(), // itemId -> { srcPath } (On Device tab)
+  deviceKeys: new Set(), // match keys for what's currently on the device
   scanning: false,
+  deviceLoading: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -123,7 +127,37 @@ function fileGroups() {
   }));
 }
 
+// On Device tab: device contents grouped by folder, every item selectable for
+// removal. No in-app preview of device files in this pass.
+function deviceGroups() {
+  if (!state.device) return [];
+  return state.device.groups.map((g) => ({
+    id: 'dev:' + g.dir,
+    title: g.name,
+    subtitle: prettyDir(g.dir),
+    artwork: null,
+    exportableCount: g.items.length,
+    items: g.items.map((it) => {
+      const sub = [it.artist, it.album, fmtDuration(it.duration), fmtBytes(it.size)]
+        .filter(Boolean)
+        .join(' · ');
+      return {
+        id: it.id,
+        title: it.title || it.fileName,
+        subtitle: sub || it.fileName,
+        exportable: true, // selectable for removal
+        status: (it.fileName.split('.').pop() || '').toUpperCase(),
+        groupTitle: g.name,
+        name: it.title || it.fileName.replace(/\.[^.]+$/, ''),
+        srcPath: it.srcPath,
+        previewPath: null,
+      };
+    }),
+  }));
+}
+
 function currentGroups() {
+  if (state.tab === 'device') return deviceGroups();
   const groups = state.tab === 'podcasts' ? podcastGroups() : fileGroups();
   if (state.filterExportable[state.tab]) {
     return groups
@@ -131,6 +165,12 @@ function currentGroups() {
       .map((g) => ({ ...g, items: g.items.filter((i) => i.exportable) }));
   }
   return groups;
+}
+
+// The selection map for the active tab — device removal is tracked separately
+// from add/export selection.
+function currentSelection() {
+  return state.tab === 'device' ? state.deviceSelected : state.selected;
 }
 
 // --- sidebar -----------------------------------------------------------
@@ -147,7 +187,20 @@ function renderGroups() {
     return;
   }
 
+  if (state.tab === 'device' && !state.device) {
+    list.innerHTML = driveSelected() || state.deviceLoading
+      ? '<li class="empty">Reading device…</li>'
+      : "<li class=\"empty\">Select a drive above to see what's on it.</li>";
+    return;
+  }
+
   if (groups.length === 0) {
+    if (state.tab === 'device') {
+      list.innerHTML = driveSelected()
+        ? '<li class="empty">No audio on this device.</li>'
+        : '<li class="empty">No drive selected — pick one above.</li>';
+      return;
+    }
     list.innerHTML =
       state.tab === 'podcasts'
         ? '<li class="empty">No downloaded episodes.<br>Download episodes in the Podcasts app first.</li>'
@@ -212,7 +265,8 @@ function renderItems() {
   list.innerHTML = '';
 
   if (!group) {
-    $('group-title').textContent = state.tab === 'files' ? 'No folder selected' : 'Select a show';
+    const empty = { podcasts: 'Select a show', files: 'No folder selected', device: 'Nothing on device' };
+    $('group-title').textContent = empty[state.tab] || 'Select a show';
     $('group-meta').textContent = '';
     return;
   }
@@ -222,7 +276,9 @@ function renderItems() {
   $('group-meta').textContent =
     state.tab === 'podcasts'
       ? `${group.exportableCount} downloaded · ${total} shown`
-      : `${group.exportableCount} exportable · ${total} file(s)`;
+      : state.tab === 'device'
+        ? `${total} file(s) on device`
+        : `${group.exportableCount} exportable · ${total} file(s)`;
 
   if (group.items.length === 0) {
     list.innerHTML = '<li class="empty">Nothing to show here.</li>';
@@ -245,7 +301,7 @@ function renderItems() {
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.disabled = !item.exportable;
-    cb.checked = state.selected.has(item.id);
+    cb.checked = currentSelection().has(item.id);
     cb.addEventListener('change', () => toggleItem(item, cb.checked));
 
     const main = document.createElement('div');
@@ -333,6 +389,12 @@ function setPlaying(id) {
 }
 
 function toggleItem(item, checked) {
+  if (state.tab === 'device') {
+    if (checked) state.deviceSelected.set(item.id, { srcPath: item.srcPath });
+    else state.deviceSelected.delete(item.id);
+    updateSelectionUI();
+    return;
+  }
   if (checked) {
     state.selected.set(item.id, {
       showTitle: item.groupTitle,
@@ -347,9 +409,10 @@ function toggleItem(item, checked) {
 }
 
 function updateSelectionUI() {
-  const n = state.selected.size;
+  const n = currentSelection().size;
   $('selection-count').textContent = `${n} selected`;
-  $('export').disabled = n === 0;
+  if (state.tab === 'device') $('remove').disabled = n === 0;
+  else $('export').disabled = n === 0;
 }
 
 // --- tabs --------------------------------------------------------------
@@ -359,15 +422,30 @@ function setTab(tab) {
   document.querySelectorAll('.tab').forEach((b) =>
     b.classList.toggle('active', b.dataset.tab === tab)
   );
+
+  const isDevice = tab === 'device';
   $('scan-bar').classList.toggle('hidden', tab !== 'files');
   $('rescan').classList.toggle('hidden', tab !== 'files' || !state.files);
+  $('filter-toggle').closest('.toggle').classList.toggle('hidden', isDevice);
   $('filter-label').textContent = tab === 'podcasts' ? 'Downloaded only' : 'Exportable only';
-  $('filter-toggle').checked = state.filterExportable[tab];
-  $('select-all').textContent = tab === 'podcasts' ? 'Select all downloaded' : 'Select all exportable';
+  $('filter-toggle').checked = !!state.filterExportable[tab];
+  $('select-all').textContent = isDevice
+    ? 'Select all'
+    : tab === 'podcasts'
+      ? 'Select all downloaded'
+      : 'Select all exportable';
+
+  // Footer action: Export on the add tabs, Remove on the device tab.
+  $('options-row').classList.toggle('hidden', isDevice);
+  $('export').classList.toggle('hidden', isDevice);
+  $('remove').classList.toggle('hidden', !isDevice);
 
   if (tab === 'podcasts' && state.podcasts === null) loadLibrary();
+  if (isDevice && state.device === null && driveSelected()) loadDevice();
+
   renderGroups();
   renderItems();
+  updateSelectionUI();
 }
 
 // --- data loading ------------------------------------------------------
@@ -385,6 +463,38 @@ async function loadLibrary() {
   if (state.tab === 'podcasts') {
     renderGroups();
     renderItems();
+  }
+}
+
+function driveSelected() {
+  return !!$('drive').value;
+}
+
+// Reads the selected drive's contents for the On Device tab.
+async function loadDevice() {
+  const mount = $('drive').value;
+  if (!mount) {
+    state.device = null;
+    if (state.tab === 'device') {
+      renderGroups();
+      renderItems();
+    }
+    return;
+  }
+  state.deviceLoading = true;
+  if (state.tab === 'device') renderGroups();
+  try {
+    state.device = await api.listDevice(mount);
+    state.activeGroup.device = null;
+  } catch (err) {
+    state.device = { groups: [] };
+    toast(err.message);
+  } finally {
+    state.deviceLoading = false;
+    if (state.tab === 'device') {
+      renderGroups();
+      renderItems();
+    }
   }
 }
 
@@ -438,7 +548,6 @@ async function runExport() {
     organizeByShow: $('opt-organize').checked,
     numberPrefix: $('opt-number').checked,
     writeM3U: $('opt-m3u').checked,
-    playlistName: 'LapPods',
   };
 
   showProgress(items.length);
@@ -476,6 +585,41 @@ function finishProgress(result) {
   state.selected.clear();
   updateSelectionUI();
   renderItems();
+
+  // What's on the device just changed — re-read it next time it's viewed.
+  state.device = null;
+  if (state.tab === 'device') loadDevice();
+}
+
+// --- remove from device ------------------------------------------------
+
+async function runRemove() {
+  const mount = $('drive').value;
+  if (!mount) {
+    toast('Select the device drive first.');
+    return;
+  }
+  const paths = Array.from(state.deviceSelected.values()).map((v) => v.srcPath);
+  if (paths.length === 0) return;
+
+  const ok = window.confirm(
+    `Permanently remove ${paths.length} file(s) from the device?\n\nThis cannot be undone.`
+  );
+  if (!ok) return;
+
+  try {
+    const res = await api.removeFromDevice(mount, paths);
+    state.deviceSelected.clear();
+    toast(
+      res.errors.length
+        ? `Removed ${res.removed.length}, ${res.errors.length} failed.`
+        : `Removed ${res.removed.length} file(s).`
+    );
+  } catch (err) {
+    toast(err.message);
+  }
+  await loadDevice();
+  updateSelectionUI();
 }
 
 // --- wiring ------------------------------------------------------------
@@ -551,6 +695,8 @@ function wire() {
     opt.textContent = `📁 ${dir.split('/').pop() || dir}`;
     sel.appendChild(opt);
     sel.value = dir;
+    state.device = null;
+    if (state.tab === 'device') loadDevice();
   });
 
   $('select-all').addEventListener('click', () => {
@@ -560,12 +706,17 @@ function wire() {
     renderItems();
   });
   $('clear-sel').addEventListener('click', () => {
-    state.selected.clear();
+    currentSelection().clear();
     updateSelectionUI();
     renderItems();
   });
 
   $('export').addEventListener('click', runExport);
+  $('remove').addEventListener('click', runRemove);
+  $('drive').addEventListener('change', () => {
+    state.device = null;
+    if (state.tab === 'device') loadDevice();
+  });
   $('progress-close').addEventListener('click', () => $('progress').classList.add('hidden'));
   $('reveal').addEventListener('click', () => {
     if (lastResultPath) api.revealInFinder(lastResultPath);

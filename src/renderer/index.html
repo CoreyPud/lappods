@@ -30,6 +30,7 @@
         <div class="tabs">
           <button class="tab active" data-tab="podcasts">Podcasts</button>
           <button class="tab" data-tab="files">Files</button>
+          <button class="tab" data-tab="device">On Device</button>
         </div>
         <div class="sidebar-head">
           <label class="toggle">
@@ -68,7 +69,7 @@
     </main>
 
     <footer class="actionbar">
-      <div class="options">
+      <div class="options" id="options-row">
         <label class="chk"><input type="checkbox" id="opt-organize" checked /> Group into folders</label>
         <label class="chk"><input type="checkbox" id="opt-number" /> Number tracks</label>
         <label class="chk"><input type="checkbox" id="opt-m3u" checked /> Create .m3u playlist</label>
@@ -76,6 +77,7 @@
       <div class="action-right">
         <span id="selection-count" class="muted">0 selected</span>
         <button id="export" class="primary" disabled>Export</button>
+        <button id="remove" class="danger hidden" disabled>Remove from device</button>
       </div>
     </footer>
 
