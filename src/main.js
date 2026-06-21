@@ -9,6 +9,8 @@ const { readLibrary } = require('./lib/podcasts');
 const { listDrives } = require('./lib/drives');
 const { exportEpisodes } = require('./lib/exporter');
 const { scan } = require('./lib/scanner');
+const { listDevice, deviceKeys, removeFromDevice } = require('./lib/device');
+const { titleKey } = require('./lib/names');
 
 let mainWindow = null;
 
@@ -134,11 +136,33 @@ app.on('window-all-closed', () => {
 // --- IPC ---------------------------------------------------------------
 
 ipcMain.handle('library:read', async () => {
-  return readLibrary();
+  const library = await readLibrary();
+  // Attach the duplicate-match key so the renderer can flag on-device episodes
+  // without needing the Node-side name logic.
+  if (Array.isArray(library)) {
+    for (const show of library) {
+      for (const ep of show.episodes || []) {
+        ep.trackKey = titleKey(ep.title);
+      }
+    }
+  }
+  return library;
 });
 
 ipcMain.handle('drives:list', async () => {
   return listDrives();
+});
+
+ipcMain.handle('device:list', async (event, mountPoint) => {
+  return listDevice(mountPoint);
+});
+
+ipcMain.handle('device:index', async (event, mountPoint) => {
+  return deviceKeys(mountPoint);
+});
+
+ipcMain.handle('device:remove', async (event, { mountPoint, paths }) => {
+  return removeFromDevice(mountPoint, paths);
 });
 
 ipcMain.handle('drives:choose', async () => {
@@ -152,7 +176,16 @@ ipcMain.handle('drives:choose', async () => {
 
 ipcMain.handle('scanner:scan', async (event, options) => {
   const onProgress = (p) => event.sender.send('scanner:progress', p);
-  return scan(options || {}, onProgress);
+  const result = await scan(options || {}, onProgress);
+  // Attach the duplicate-match key, mirroring the export name (tag title, or
+  // filename without extension).
+  for (const group of result.groups || []) {
+    for (const item of group.items) {
+      const name = item.title || item.fileName.replace(/\.[^.]+$/, '');
+      item.trackKey = titleKey(name);
+    }
+  }
+  return result;
 });
 
 ipcMain.handle('export:run', async (event, { items, options }) => {
