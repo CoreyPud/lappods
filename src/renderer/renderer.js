@@ -95,6 +95,18 @@ function podcastGroups() {
   }));
 }
 
+// Maps a scanner `reason` code to the badge label + hover tip shown for a
+// file the device can't play.
+function blockReason(reason) {
+  if (reason === 'alac') {
+    return {
+      label: 'ALAC',
+      tip: 'Apple Lossless — not supported by the device. Convert to AAC or MP3 first.',
+    };
+  }
+  return { label: 'Protected', tip: 'DRM-protected — cannot be exported.' };
+}
+
 function fileGroups() {
   if (!state.files) return [];
   return state.files.groups.map((g) => ({
@@ -111,12 +123,16 @@ function fileGroups() {
         fmtBytes(it.size),
         fmtMtime(it.mtime) && 'Saved ' + fmtMtime(it.mtime),
       ].filter(Boolean).join(' · ');
+      const reason = blockReason(it.reason);
       return {
         id: it.id,
         title: it.title || it.fileName,
         subtitle: sub || it.fileName,
         exportable: it.exportable,
-        status: it.exportable ? it.fileName.split('.').pop().toUpperCase() : 'Protected',
+        status: it.exportable
+          ? it.fileName.split('.').pop().toUpperCase()
+          : reason.label,
+        statusTitle: it.exportable ? null : reason.tip,
         groupTitle: g.name,
         // Export base name: tag title if present, else filename without extension
         // (the exporter re-appends the real extension).
@@ -333,6 +349,7 @@ function renderItems() {
     status.innerHTML = item.exportable
       ? `<span class="dot dl"></span>${item.status}`
       : `<span class="dot no"></span>${item.status}`;
+    if (item.statusTitle) status.title = item.statusTitle;
 
     if (playingId === item.id) li.classList.add('playing');
     li.appendChild(cb);
