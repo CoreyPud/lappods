@@ -12,6 +12,7 @@ const {
   deviceKeys,
   removeFromDevice,
   writeDevicePlaylist,
+  cleanDeviceJunk,
   CANONICAL_PLAYLIST,
 } = require('../src/lib/device');
 const { fileKey } = require('../src/lib/names');
@@ -79,6 +80,36 @@ test('deviceKeys returns keys for nested and root files alike', async () => {
 test('listDevice with no mount returns an empty result', async () => {
   const res = await listDevice(null);
   assert.deepStrictEqual(res, { groups: [], fileCount: 0, roots: [] });
+});
+
+test('cleanDeviceJunk removes ._* and .DS_Store but leaves real audio', async () => {
+  const mount = await makeFixture();
+  // Junk that accumulates from manual Finder drags, at root and nested.
+  await fsp.writeFile(path.join(mount, '.DS_Store'), 'junk');
+  await fsp.writeFile(path.join(mount, '._x.mp3'), 'junk');
+  await fsp.writeFile(path.join(mount, 'ShowA', '.DS_Store'), 'junk');
+  await fsp.writeFile(path.join(mount, 'ShowA', '._ep1.mp3'), 'junk');
+
+  const res = await cleanDeviceJunk(mount);
+
+  assert.deepStrictEqual(res.errors, []);
+  assert.strictEqual(res.removed.length, 4);
+  assert.strictEqual(fs.existsSync(path.join(mount, '.DS_Store')), false);
+  assert.strictEqual(fs.existsSync(path.join(mount, '._x.mp3')), false);
+  assert.strictEqual(fs.existsSync(path.join(mount, 'ShowA', '.DS_Store')), false);
+  assert.strictEqual(fs.existsSync(path.join(mount, 'ShowA', '._ep1.mp3')), false);
+  // Real audio is untouched, including the file the sidecar shadowed.
+  assert.strictEqual(fs.existsSync(path.join(mount, 'ShowA', 'ep1.mp3')), true);
+  assert.strictEqual(fs.existsSync(path.join(mount, 'root.mp3')), true);
+});
+
+test('listDevice sweeps macOS junk before scanning', async () => {
+  const mount = await makeFixture();
+  await fsp.writeFile(path.join(mount, 'ShowA', '._ep1.mp3'), 'junk');
+
+  await listDevice(mount);
+
+  assert.strictEqual(fs.existsSync(path.join(mount, 'ShowA', '._ep1.mp3')), false);
 });
 
 test('writeDevicePlaylist lists current audio with device-relative paths', async () => {
