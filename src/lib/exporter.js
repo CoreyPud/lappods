@@ -6,7 +6,7 @@ const { pipeline } = require('stream/promises');
 const { fileURLToPath } = require('url');
 
 const { sanitize } = require('./names');
-const { writeDevicePlaylist } = require('./device');
+const { writeDevicePlaylist, cleanDeviceJunk } = require('./device');
 
 function uniquePath(dir, base, ext) {
   let candidate = path.join(dir, base + ext);
@@ -89,6 +89,12 @@ async function exportEpisodes(items, options) {
       errors.push({ episode: item.episodeTitle, message: err.message });
     }
   }
+
+  // Sweep any macOS junk the drive collected from manual Finder drags, so it
+  // doesn't end up in the playlist or trip up the device's player.
+  try {
+    await cleanDeviceJunk(destDir);
+  } catch {}
 
   // Regenerate the single canonical playlist from the destination's current
   // contents, so it reflects this export plus whatever was already there.

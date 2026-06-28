@@ -18,10 +18,64 @@ function isInside(parent, child) {
   return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
 }
 
+// True when a base name is macOS filesystem cruft: AppleDouble sidecars (`._*`)
+// or Finder's `.DS_Store`. These accumulate from manual Finder drags onto the
+// drive (our own exporter copies via Node streams and never makes them), and
+// some players try to read `._*` files as audio and choke.
+function isMacJunk(name) {
+  return name === '.DS_Store' || name.startsWith('._');
+}
+
+// Recursively deletes macOS junk files (`._*`, `.DS_Store`) from the mount,
+// leaving real audio untouched. Refuses any path that does not resolve inside
+// the mount, reusing the same guard as removeFromDevice. Safe to call on every
+// device load and after each export.
+async function cleanDeviceJunk(mountPoint) {
+  const removed = [];
+  const errors = [];
+  if (!mountPoint) return { removed, errors };
+
+  let mountReal;
+  try {
+    mountReal = await fsp.realpath(mountPoint);
+  } catch {
+    return { removed, errors: [{ path: mountPoint, message: 'device not found' }] };
+  }
+
+  async function walk(dir) {
+    let entries;
+    try {
+      entries = await fsp.readdir(dir, { withFileTypes: true });
+    } catch (err) {
+      errors.push({ path: dir, message: err.message });
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(full);
+      } else if (isMacJunk(entry.name)) {
+        if (!isInside(mountReal, full)) continue;
+        try {
+          await fsp.unlink(full);
+          removed.push(full);
+        } catch (err) {
+          errors.push({ path: full, message: err.message });
+        }
+      }
+    }
+  }
+
+  await walk(mountReal);
+  return { removed, errors };
+}
+
 // Lists the device's audio, grouped by folder, with embedded tags — same shape
-// the Files tab renders.
+// the Files tab renders. Sweeps macOS junk first so a stray `._foo.mp3` never
+// shows up as a phantom track.
 async function listDevice(mountPoint) {
   if (!mountPoint) return { groups: [], fileCount: 0, roots: [] };
+  await cleanDeviceJunk(mountPoint);
   return scan({ roots: [mountPoint] });
 }
 
@@ -139,6 +193,7 @@ module.exports = {
   deviceKeys,
   removeFromDevice,
   writeDevicePlaylist,
+  cleanDeviceJunk,
   isInside,
   CANONICAL_PLAYLIST,
 };
