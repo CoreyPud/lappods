@@ -82,7 +82,10 @@ async function walk(roots, onProgress) {
       } catch {
         continue;
       }
-      files.push({ path: full, ext, size, mtime, exportable: isAudio });
+      // `reason` explains why a file can't be exported (null = exportable).
+      // ALAC is detected later from the codec; DRM is known from the extension.
+      const reason = isProtected ? 'drm' : null;
+      files.push({ path: full, ext, size, mtime, exportable: isAudio, reason });
       if (files.length - lastReport >= 25) {
         lastReport = files.length;
         onProgress?.({ found: files.length });
@@ -117,6 +120,15 @@ async function readTags(files, onProgress) {
         f.album = c.album || null;
         f.trackNo = c.track && c.track.no ? c.track.no : null;
         f.duration = meta.format ? meta.format.duration || null : null;
+        // The OpenSwim Pro's "M4A" support is AAC-in-m4a only. Apple Lossless
+        // (ALAC) files share the .m4a extension but trigger a "data error" that
+        // blocks the device entirely, so flag them as non-exportable here —
+        // the extension alone can't tell ALAC and AAC apart.
+        const codec = (meta.format && meta.format.codec || '').toLowerCase();
+        if (codec === 'alac') {
+          f.exportable = false;
+          f.reason = 'alac';
+        }
       } catch {
         // Unreadable/odd file — fall back to filename-only.
       }
@@ -152,6 +164,7 @@ function groupByFolder(files) {
       size: f.size,
       mtime: f.mtime,
       exportable: f.exportable,
+      reason: f.reason || null,
     });
     if (f.mtime > g.latest) g.latest = f.mtime;
   }
